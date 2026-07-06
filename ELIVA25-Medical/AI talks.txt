@@ -1,0 +1,84 @@
+Gemini
+With Huber Loss in attempt 7 I have obtained a Kaggle score of 19.04 is worse in attemp 3 with MAE loss: 18.81. Anyway is far less than the best in the leader board: 13.1. This is the leader board: https://www.kaggle.com/competitions/eliva-25-medical/leaderboard Why I'm not able to achieve this score?
+Achieving a Mean Absolute Error (MAE) of ~18.8 months with a single DenseNet121 model is actually a very solid baseline! The gap between ~18.8 and ~13.1 on the leaderboard is typically crossed not just by switching base models, but by applying a combination of advanced domain-specific and Kaggle-specific techniques.
+
+Here are the main reasons why top competitors are scoring in the 13-14 month range and what you can do to bridge the gap:
+
+1. Advanced Image Preprocessing (Crucial for X-Rays)
+Right now, your model rescales the whole image to 384x384. This includes a lot of useless black background.
+
+Hand Detection / Cropping: Top solutions often use a secondary, lightweight model (like YOLO or a simple thresholding script) to detect the bounding box of the hand and crop out the black background. This forces the DenseNet to focus only on the bones.
+Contrast Enhancement (CLAHE): Medical images heavily benefit from Contrast Limited Adaptive Histogram Equalization (CLAHE). It normalizes the exposure across different X-ray machines, making the carpal bones and growth plates highly visible.
+
+
+2. Ensembling and Cross-Validation
+You are currently using a single random 80/20 train/validation split.
+
+K-Fold Cross-Validation: Top Kagglers split the training data into 5 folds. They train 5 separate models (one on each fold).
+Ensembling: During inference, they pass the test images through all 5 models and average the predictions. This drastically reduces variance and usually shaves 1-2 entire months off the MAE.
+Multi-Architecture Ensembles: They often average the predictions of a DenseNet, an EfficientNet, and a ResNeXt to get the best of all worlds.
+
+
+3. Attention Mechanisms
+Bone age is primarily determined by specific regions: the carpal bones (wrist) and the phalangeal joints (fingers).
+
+Spatial Attention: Integrating attention layers (like CBAM - Convolutional Block Attention Module) into your DenseNet helps the network mathematically 'weigh' the wrist joints higher than the fleshy parts of the hand.
+
+
+4. Problem Framing (Classification vs. Regression)
+You are framing this as a pure regression problem (Dense(1, linear)).
+
+Expectation Regression / Ordinal Classification: Since bone age in the dataset is bounded (usually between 0 and 230 months), many top solutions frame this as a 230-class classification problem. They output a softmax probability for each month, and then calculate the expected value (sum of probability * month_index). This often converges much better than pure linear regression.
+
+
+5. Test Time Augmentation (TTA)
+During the final prediction on the test set, instead of predicting on the image once, top competitors predict on the image, the flipped image, and slightly rotated versions of the image, then average those predictions.
+
+Next Steps to Try: If you want to push your score down, I highly recommend starting with image cropping/CLAHE preprocessing or implementing 5-Fold Cross Validation with your current DenseNet121 setup. Let me know if you'd like to write the code for any of these approaches!
+
+
+Opencode
+In notebook eliva25-kaggle-notebook.ipynb With Huber Loss in attempt 7 I have obtained a Kaggle score of 19.04 is worse in attemp 3 with MAE loss: 18.81. Anyway is far less than the best in the leader board: 13.1. This is the leader board: https://www.kaggle.com/competitions/eliva-25-medical/leaderboard Why I'm not able to achieve this score? 
++ Thought: 615ms
+→Read eliva25-kaggle-notebook.ipynb 
+%WebFetch https://www.kaggle.com/competitions/eliva-25-medical/leaderboard
++ Thought: 604ms
+→Read eliva25-kaggle-notebook.ipynb [offset=1422]
+%WebFetch https://www.kaggle.com/competitions/eliva-25-medical/leaderboard
++ Thought: 1.1s
+→Read eliva25-kaggle-notebook.ipynb [offset=2724]
+→Read . 
++ Thought: 405ms
+→Read eliva25-kaggle-notebook.ipynb [offset=3376]
++ Thought: 11.7s
+Now I have a comprehensive view. Let me check for any other relevant files.
+→Read ELIVA25-Medical 
+✱Grep "18\.81|19\.04|13\.1" in . (2 matches)
++ Thought: 7.6s
+Here is a clear diagnosis of the main problems:
+
+1. Severe overfitting (the core issue)
+- Training MAE ~14.3 but validation MAE ~17.6–19.9 — a persistent ~4–5 month gap.
+- The model memorizes the RSNA training set instead of learning generalizable bone age features.
+- This gap never narrows, even after fine-tuning.
+
+2. Only 33 test samples → high variance
+With so few test images, even small generalization errors hit your score hard. The leaderboard's 13.1 is achievable, but your model's val MAE (~17.9) is already far from that before even seeing the test set.
+
+3. Domain shift between RSNA and competition test set
+You train on ~12k RSNA Bone Age images (clinical, controlled). The competition's 33 images (IDs 1.png–33.png, different numbering from RSNA's 1377+) likely come from a different source/hospital/device.
+
+4. The Huber loss change was not the lever to pull
+Huber vs MAE is a minor tweak. Switching back to MAE won't close a ~5-month gap. The real problem is generalization.
+
+What would actually move the needle toward 13.1:
+Fix
+K-fold cross-validation (5-fold) + ensemble predictions
+Much stronger augmentation (elastic transforms, contrast, gamma, gaussian noise)
+Stratified age-group sampling instead of random 80/20 split
+Post-processing: constrain predictions to plausible age range (e.g., 0–228 months)
+Discriminative learning rates (very low LR for early layers, higher for new head)
+Train longer with cosine decay + label smoothing
+Test-time augmentation (TTA)
+Ensemble across checkpoints
+Your architecture (DenseNet121) is fine. The gap to 13.1 is from overfitting + no ensemble — not from the choice of backbone or loss function.
